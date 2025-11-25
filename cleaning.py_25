@@ -1,0 +1,95 @@
+import os
+import re
+import pandas as pd
+
+# Paths to raw data directories
+lapaz_path="data/raw/la_paz"
+quito_path="data/raw/quito"
+
+# List of interjections to remove
+INTERJECTIONS = {
+    "ay", "bah", "hum", "huy", "ah", "eh", "oh", "uh", "puaf", "puaff",
+    "puf", "puff", "uf", "uff", "aj", "puaj", "ejem", "epa", "hala",
+    "olé", "ajá", "ajajá", "pche", "pchs", "pst", "buah", "am", "uhum", "uhm",
+    "mmm", "mhm", "jajaja", "ehhh", "eeh", "emm", "aah", "ahh"
+}
+# Blacklist words to remove
+BLACKLIST = {"quito", "la paz", "cotopaxi", "aymara"}
+
+def remove_blacklist_words(text, blacklist=BLACKLIST):
+    """Remove any blacklist word from text."""
+    pattern = r"\b(" + "|".join(re.escape(w) for w in blacklist) + r")\b"
+    cleaned = re.sub(pattern, "", text)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+def clean_line(line, remove_blacklist=True):
+    """
+    Cleans a line by:
+    - Removing transcription markup (<…>)
+    - Removing 'I:' prefix
+    - Removing interjections
+    - Lowercasing
+    - Removing punctuation, numbers, special characters
+    - Removing blacklist words
+    - Stripping whitespace
+    """
+
+    # Remove anything between < and >
+    line = re.sub(r"<[^>]+>", "", line)
+
+    # Remove leading "I:"
+    line = line.lstrip("I:").strip()
+
+    # Remove interjections
+    words = line.split()
+    words = [w for w in words if w.lower() not in INTERJECTIONS]
+    line = " ".join(words)
+
+    # Lowercase
+    line = line.lower()
+
+    # Remove punctuation, numbers, special characters
+    line = re.sub(r"[^a-záéíóúüñ\s]", "", line)
+
+    # Optionally remove blacklist words
+    if remove_blacklist:
+        line = remove_blacklist_words(line)
+
+    # Strip extra spaces
+    line = re.sub(r"\s+", " ", line).strip()
+
+    return line
+
+def label_interviewee_speech(lapaz_path="data/raw/la_paz", quito_path="data/raw/quito", remove_blacklist=True):
+    labeled_data = []
+
+    def process_folder(folder_path, label):
+        for filename in os.listdir(folder_path):
+            if filename.endswith(".txt"):
+                file_path = os.path.join(folder_path, filename)
+                with open(file_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("I:"):
+                            line = clean_line(line, remove_blacklist=remove_blacklist)
+                            if line:
+                                labeled_data.append({"line": line, "label": label})
+
+    process_folder(lapaz_path, "lapaz")
+    process_folder(quito_path, "quito")
+
+    return labeled_data
+
+# Process data and save to CSV
+data = label_interviewee_speech()
+df = pd.DataFrame(data)
+
+out_dir = os.path.join("data", "clean")
+os.makedirs(out_dir, exist_ok=True)
+out_path = os.path.join(out_dir, "cleaned_data.csv")
+
+df.to_csv(out_path, index=False, encoding="utf-8")
+
+print(f"CSV saved as '{out_path}'")
