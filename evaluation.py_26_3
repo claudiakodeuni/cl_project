@@ -1,0 +1,73 @@
+import joblib
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+
+from models.splitting import load_and_split_data
+from models.training_lexical import train_lexical_model_cv
+from models.training_syntactical import train_syntactic_model_cv
+
+
+def evaluate_model(model_path, vectorizer_path, X_test, y_test, model_name="Model"):
+    """
+    Evaluate a trained SVM model on test set.
+    """
+    print(f"\n{'=' * 50}")
+    print(f"EVALUATION: {model_name}")
+    print(f"{'=' * 50}")
+    
+    try:
+        model = joblib.load(model_path)
+    except FileNotFoundError:
+        print(f"Error: Model file not found at {model_path}")
+        return None
+    except Exception as e:
+        print(f"Error loading model: {e}")
+        return None
+    
+    y_pred = model.predict(X_test)
+    
+    accuracy = accuracy_score(y_test, y_pred)
+    print(f"\nAccuracy: {accuracy:.4f}")
+    
+    print("\nClassification Report:")
+    print(classification_report(y_test, y_pred, target_names=["la_paz", "quito"]))
+    
+    print("Confusion Matrix:")
+    cm = confusion_matrix(y_test, y_pred)
+    print(cm)
+    
+    return {"accuracy": accuracy, "confusion_matrix": cm}
+
+
+def main():
+    """
+    Main pipeline: load data, train models, evaluate models.
+    """
+    csv_path = "data/clean/cleaned_data.csv"
+    
+    print("=" * 60)
+    print("LEXICAL MODEL TRAINING")
+    print("=" * 60)
+    lex_model, lex_vec, lex_cv_scores = train_lexical_model_cv(csv_path, n_splits=5)
+    
+    print("\n" + "=" * 60)
+    print("SYNTACTIC MODEL TRAINING")
+    print("=" * 60)
+    syn_model, syn_vec, syn_cv_scores = train_syntactic_model_cv(csv_path, n_splits=5)
+    
+    print("\n" + "=" * 60)
+    print("FINAL COMPARISON")
+    print("=" * 60)
+    print(f"Lexical Model CV Mean Accuracy:    {sum(lex_cv_scores)/len(lex_cv_scores):.4f}")
+    print(f"Syntactic Model CV Mean Accuracy:  {sum(syn_cv_scores)/len(syn_cv_scores):.4f}")
+    
+    lex_mean = sum(lex_cv_scores) / len(lex_cv_scores)
+    syn_mean = sum(syn_cv_scores) / len(syn_cv_scores)
+    
+    if lex_mean > syn_mean:
+        print(f"\n✓ Lexical model performs better (+{lex_mean - syn_mean:.4f})")
+    else:
+        print(f"\n✓ Syntactic model performs better (+{syn_mean - lex_mean:.4f})")
+
+
+if __name__ == "__main__":
+    main()
