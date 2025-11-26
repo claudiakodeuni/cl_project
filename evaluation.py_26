@@ -1,0 +1,71 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+
+import joblib
+import pandas as pd
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from models.spliting import load_and_split_data
+
+
+def evaluate_model(model_path, vectorizer_path, X_test, y_test, model_name="Model"):
+    """
+    Evaluate a trained SVM model on test set.
+    
+    Args:
+        model_path (str): Path to saved model
+        vectorizer_path (str): Path to saved vectorizer
+        X_test: Test feature matrix
+        y_test: Test labels
+        model_name (str): Name of model for display
+    """
+    print(f"\n{'=' * 50}")
+    print(f"EVALUATION: {model_name}")
+    print(f"{'=' * 50}")
+    
+    model = joblib.load(model_path)
+    y_pred = model.predict(X_test)
+    
+    accuracy = accuracy_score(y_test, y_pred)
+    print(f"\nAccuracy: {accuracy:.4f}")
+    
+    print("\nClassification Report:")
+    print(classification_report(y_test, y_pred, target_names=["la_paz", "quito"]))
+    
+    print("Confusion Matrix:")
+    cm = confusion_matrix(y_test, y_pred)
+    print(cm)
+    
+    return {"accuracy": accuracy, "confusion_matrix": cm}
+
+
+if __name__ == "__main__":
+    from training_lexical import train_lexical_model
+    from training_syntactical import train_syntactic_model
+    
+    # Load and split data
+    df_train, df_test = load_and_split_data("data/clean/cleaned_data.csv")
+    
+    # Train and evaluate lexical model
+    lex_model, lex_vec, X_test_lex, y_test_lex = train_lexical_model(df_train, df_test)
+    lex_results = evaluate_model(
+        "models/svm_lexical.joblib",
+        "models/vectorizer_lexical.joblib",
+        X_test_lex, y_test_lex,
+        model_name="LEXICAL MODEL (Unigrams)"
+    )
+    
+    # Train and evaluate syntactic model
+    syn_model, syn_vec, X_test_syn, y_test_syn = train_syntactic_model(df_train, df_test)
+    syn_results = evaluate_model(
+        "models/svm_syntactic.joblib",
+        "models/vectorizer_syntactic.joblib",
+        X_test_syn, y_test_syn,
+        model_name="SYNTACTIC MODEL (POS Tags)"
+    )
+    
+    print(f"\n{'=' * 50}")
+    print("SUMMARY")
+    print(f"{'=' * 50}")
+    print(f"Lexical Model Accuracy:   {lex_results['accuracy']:.4f}")
+    print(f"Syntactic Model Accuracy: {syn_results['accuracy']:.4f}")
