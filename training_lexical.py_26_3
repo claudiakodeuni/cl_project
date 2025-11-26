@@ -1,0 +1,59 @@
+import os
+import sys
+import joblib
+import pandas as pd
+import numpy as np
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from src.preprocessing.tokenizer import tokenize_dataframe
+from src.features.feature_extraction import build_tfidf_features
+from models.splitting import load_data_for_cv, get_train_test_folds
+
+
+def train_lexical_model_cv(csv_path, n_splits=5):
+    """
+    Train lexical SVM model using cross-validation with unigrams.
+
+    Args:
+        csv_path (str): Path to cleaned_data.csv
+        n_splits (int): Number of folds (default 5)
+
+    Returns:
+        (model, vectorizer, cv_scores): Trained model, vectorizer, and cross-validation scores
+    """
+    print("=" * 50)
+    print("TRAINING LEXICAL MODEL (Unigrams) - Cross-Validation")
+    print("=" * 50)
+
+    df = load_data_for_cv(csv_path)
+    cv_scores = []
+    fold_models = []
+
+    for fold, (train_idx, test_idx) in enumerate(get_train_test_folds(df, n_splits=n_splits), 1):
+        print(f"\nFold {fold}/{n_splits}")
+        
+        df_train = df.iloc[train_idx].reset_index(drop=True)
+        df_test = df.iloc[test_idx].reset_index(drop=True)
+
+        # Tokenize
+        df_train = tokenize_dataframe(df_train, text_column="line")
+        df_test = tokenize_dataframe(df_test, text_column="line")
+
+        # Build TF-IDF features (unigrams only)
+        X_train, vectorizer = build_tfidf_features(
+            df_train,
+            column="tokens",
+            ngram_range=(1, 1),
+            max_features=5000
+        )
+        y_train = df_train["label"].values
+
+        # Transform test set
+        X_test = vectorizer.transform(
+            df_test["tokens"].apply(lambda x: " ".join(x))
+        )
