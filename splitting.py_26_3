@@ -1,0 +1,101 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split, StratifiedKFold
+
+
+def load_and_split_data(csv_path, test_size=0.2, random_state=42):
+    """
+    Load cleaned data from CSV and split into train/test sets.
+    
+    Args:
+        csv_path (str): Path to cleaned_data.csv
+        test_size (float): Fraction for test set (default 0.2)
+        random_state (int): Seed for reproducibility
+    
+    Returns:
+        (df_train, df_test): Train and test DataFrames
+    """
+    df = pd.read_csv(csv_path)
+    
+    # Map label strings to integers (1=la_paz, 2=quito)
+    label_map = {"lapaz": 1, "quito": 2}
+    df["label"] = df["label"].map(label_map)
+    
+    # Stratified split
+    df_train, df_test = train_test_split(
+        df, 
+        test_size=test_size, 
+        random_state=random_state, 
+        stratify=df["label"]
+    )
+    
+    return df_train, df_test
+
+
+def load_data_for_cv(csv_path):
+    """
+    Load cleaned data from CSV for cross-validation.
+    
+    Args:
+        csv_path (str): Path to cleaned_data.csv
+    
+    Returns:
+        df: DataFrame with labels mapped to integers
+    """
+    df = pd.read_csv(csv_path)
+    
+    # Map label strings to integers (1=la_paz, 2=quito)
+    label_map = {"lapaz": 1, "quito": 2}
+    df["label"] = df["label"].map(label_map)
+    
+    return df
+
+
+def get_stratified_kfolds(df, n_splits=5, shuffle=True, random_state=42):
+    """
+    Generate StratifiedKFold splits for cross-validation.
+    
+    Args:
+        df (pd.DataFrame): DataFrame with 'label' column
+        n_splits (int): Number of folds (default 5)
+        shuffle (bool): Whether to shuffle before splitting (default True)
+        random_state (int): Seed for reproducibility
+    
+    Returns:
+        StratifiedKFold object with indices for train/test splits
+    """
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=shuffle, random_state=random_state)
+    return skf, df["label"].values
+
+
+def get_train_test_folds(df, n_splits=5, shuffle=True, random_state=42):
+    """
+    Get train/test fold indices using StratifiedKFold.
+    
+    Args:
+        df (pd.DataFrame): DataFrame with 'label' column
+        n_splits (int): Number of folds (default 5)
+        shuffle (bool): Whether to shuffle before splitting (default True)
+        random_state (int): Seed for reproducibility
+    
+    Yields:
+        (train_idx, test_idx): Indices for each fold
+    """
+    skf, y = get_stratified_kfolds(df, n_splits=n_splits, shuffle=shuffle, random_state=random_state)
+    
+    for train_idx, test_idx in skf.split(df, y):
+        yield train_idx, test_idx
+
+
+if __name__ == "__main__":
+    # Example: Simple train-test split
+    df_train, df_test = load_and_split_data("data/clean/cleaned_data.csv")
+    print(f"Train set: {len(df_train)} samples")
+    print(f"Test set: {len(df_test)} samples")
+    
+    # Example: StratifiedKFold cross-validation
+    df = load_data_for_cv("data/clean/cleaned_data.csv")
+    skf, y = get_stratified_kfolds(df, n_splits=5, shuffle=True, random_state=42)
+    
+    print(f"\nStratifiedKFold splits (n_splits=5):")
+    for fold, (train_idx, test_idx) in enumerate(skf.split(df, y), 1):
+        print(f"Fold {fold}: Train={len(train_idx)}, Test={len(test_idx)}")
