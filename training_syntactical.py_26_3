@@ -1,0 +1,121 @@
+import os
+import sys
+import joblib
+import pandas as pd
+import numpy as np
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from src.preprocessing.tokenizer import tokenize_dataframe
+from src.preprocessing.pos_tagger import pos_tag_dataframe
+from src.features.feature_extraction import build_tfidf_features
+from models.splitting import load_data_for_cv, get_train_test_folds
+
+
+def train_syntactic_model_cv(csv_path, n_splits=5):
+    """
+    Train syntactic SVM model using cross-validation with POS tags.
+
+    Args:
+        csv_path (str): Path to cleaned_data.csv
+        n_splits (int): Number of folds (default 5)
+
+    Returns:
+        (model, vectorizer, cv_scores): Trained model, vectorizer, and cross-validation scores
+    """
+    print("=" * 50)
+    print("TRAINING SYNTACTIC MODEL (POS Tags) - Cross-Validation")
+    print("=" * 50)
+
+    df = load_data_for_cv(csv_path)
+    cv_scores = []
+    fold_models = []
+
+    for fold, (train_idx, test_idx) in enumerate(get_train_test_folds(df, n_splits=n_splits), 1):
+        print(f"\nFold {fold}/{n_splits}")
+        
+        df_train = df.iloc[train_idx].reset_index(drop=True)
+        df_test = df.iloc[test_idx].reset_index(drop=True)
+
+        # Tokenize
+        df_train = tokenize_dataframe(df_train, text_column="line")
+        df_test = tokenize_dataframe(df_test, text_column="line")
+
+        # POS tag
+        print(f"  POS tagging fold {fold}...")
+        df_train = pos_tag_dataframe(df_train, tokens_column="tokens")
+        df_test = pos_tag_dataframe(df_test, tokens_column="tokens")
+
+        # Build TF-IDF features (unigrams + bigrams of POS tags)
+        X_train, vectorizer = build_tfidf_features(
+            df_train,
+            column="pos_sequence",
+            ngram_range=(1, 2),
+            max_features=5000
+        )
+        y_train = df_train["label"].values
+
+        # Transform test set
+        X_test = vectorizer.transform(
+            df_test["pos_sequence"].apply(lambda x: " ".join(x))
+        )
+        y_test = df_test["label"].values
+
+        print(f"  Train shape: {X_train.shape}, Test shape: {X_test.shape}")
+
+        # Train SVM
+        model = Pipeline([
+            ('scaler', StandardScaler(with_mean=False)),
+            ('svc', SVC(kernel='rbf', C=1.0, probability=True, random_state=42))
+        ])
+
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+        accuracy = accuracy_score(y_test, y_pred)
+        cv_scores.append(accuracy)
+        fold_models.append((model, vectorizer))
+
+        print(f"  Fold Accuracy: {accuracy:.4f}")
+
+    # Save the final model (trained on all data)
+    print("\n" + "=" * 50)
+    print("Training final model on all data...")
+    df_all = load_data_for_cv(csv_path)
+    df_all = tokenize_dataframe(df_all, text_column="line")
+    df_all = pos_tag_dataframe(df_all, tokens_column="tokens")
+    
+    X_all, final_vectorizer = build_tfidf_features(
+        df_all,
+        column="pos_sequence",
+        ngram_range=(1, 2),
+        max_features=5000
+    )
+    y_all = df_all["label"].values
+
+    final_model = Pipeline([
+        ('scaler', StandardScaler(with_mean=False)),
+        ('svc', SVC(kernel='rbf', C=1.0, probability=True, random_state=42))
+    ])
+
+    final_model.fit(X_all, y_all)
+
+    # Save model and vectorizer
+    os.makedirs("models", exist_ok=True)
+    joblib.dump(final_model, "models/svm_syntactic.joblib")
+    joblib.dump(final_vectorizer, "models/vectorizer_syntactic.joblib")
+    print("✓ Model saved to models/svm_syntactic.joblib")
+    print("✓ Vectorizer saved to models/vectorizer_syntactic.joblib")
+
+    print(f"\nCross-Validation Results:")
+    print(f"  Mean Accuracy: {np.mean(cv_scores):.4f} (+/- {np.std(cv_scores):.4f})")
+    print(f"  Fold Scores: {[f'{s:.4f}' for s in cv_scores]}")
+
+    return final_model, final_vectorizer, cv_scores
+
+
+if __name__ == "__main__":
+    train_syntactic_model_cv("data/clean/cleaned_data.csv", n_splits=5)
