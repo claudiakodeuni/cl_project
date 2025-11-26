@@ -1,0 +1,76 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+
+import joblib
+import pandas as pd
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+
+from preprocessing.tokenizer import tokenize_dataframe
+from preprocessing.cleaning import clean_line
+from features.feature_extraction import build_tfidf_features
+from models.spliting import load_and_split_data
+
+
+def train_lexical_model(df_train, df_test):
+    """
+    Train lexical SVM model using unigrams (1-grams only).
+    
+    Args:
+        df_train (pd.DataFrame): Training data
+        df_test (pd.DataFrame): Test data
+    
+    Returns:
+        (model, vectorizer, X_test, y_test)
+    """
+    print("=" * 50)
+    print("TRAINING LEXICAL MODEL (Unigrams)")
+    print("=" * 50)
+    
+    # Tokenize training and test data
+    df_train = tokenize_dataframe(df_train, text_column="line")
+    df_test = tokenize_dataframe(df_test, text_column="line")
+    
+    # Build TF-IDF features (unigrams only)
+    X_train, vectorizer = build_tfidf_features(
+        df_train,
+        column="tokens",
+        ngram_range=(1, 1),  # unigrams only
+        max_features=5000
+    )
+    y_train = df_train["label"].values
+    
+    # Transform test set
+    X_test = vectorizer.transform(
+        df_test["tokens"].apply(lambda x: " ".join(x))
+    )
+    y_test = df_test["label"].values
+    
+    print(f"Training set shape: {X_train.shape}")
+    print(f"Test set shape: {X_test.shape}")
+    
+    # Build and train SVM pipeline
+    model = Pipeline([
+        ('scaler', StandardScaler(with_mean=False)),
+        ('svc', SVC(kernel='rbf', C=1.0, probability=True, random_state=42))
+    ])
+    
+    print("Training SVM classifier...")
+    model.fit(X_train, y_train)
+    print("✓ Training complete!")
+    
+    return model, vectorizer, X_test, y_test
+
+
+if __name__ == "__main__":
+    df_train, df_test = load_and_split_data("data/clean/cleaned_data.csv")
+    model, vectorizer, X_test, y_test = train_lexical_model(df_train, df_test)
+    
+    # Save model and vectorizer
+    os.makedirs("models", exist_ok=True)
+    joblib.dump(model, "models/svm_lexical.joblib")
+    joblib.dump(vectorizer, "models/vectorizer_lexical.joblib")
+    print("✓ Model saved to models/svm_lexical.joblib")
+    print("✓ Vectorizer saved to models/vectorizer_lexical.joblib")
